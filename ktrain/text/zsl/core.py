@@ -2,6 +2,7 @@ from ...imports import *
 from ... import utils as U
 import torch
 import numpy as np
+import time
 
 
 class ZeroShotClassifier():
@@ -56,15 +57,24 @@ class ZeroShotClassifier():
         
         hypothesis += ' {}'
         true_probs = []
+        
+        # padding the docs
+        padded_docs = []
+        lengths = [len(self.tokenizer.tokenize(doc)) for doc in docs]
+        max_length = max(lengths)
+        for i in range(len(lengths)):
+            padded_docs.append(docs[i] + ' ' + ' '.join(['<pad>']*(max_length - lengths[i])))
 
         with torch.no_grad():
             for topic_string in topic_strings:
+                print(topic_string)
                 hypothesis_ = hypothesis.format(topic_string)
                 input_ids = [
                     self.tokenizer.encode(
                         doc, hypothesis_, return_tensors='pt').to(
-                        self.torch_device) for doc in docs]
-                logits = [self.model(input_id)[0] for input_id in input_ids]
+                        self.torch_device) for doc in padded_docs]
+                input_ids = torch.cat(input_ids)
+                logits = [torch.reshape(x, (1, 3)) for x in self.model(input_ids)[0]]
 
                 # we throw away "neutral" (dim 1) and take the probability of
                 # "entailment" (2) as the probability of the label being true
