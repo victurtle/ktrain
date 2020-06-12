@@ -40,6 +40,7 @@ class ZeroShotClassifier():
             docs,
             hypothesis='This text is about',
             topic_strings=[],
+            max_sequence_length=5,
             include_labels=False):
         """
         zero-shot topic classification
@@ -49,32 +50,38 @@ class ZeroShotClassifier():
           topic_strings(list): a list of strings representing topics of your choice
                                Example:
                                topic_strings=['political science', 'sports', 'science']
+          max_sequence_length(int): maximum allowable length of doc
         Returns:
           inferred probabilities
         """
         if topic_strings is None or len(topic_strings) == 0:
             raise ValueError('topic_strings must be a list of strings')
-        
+
         hypothesis += ' {}'
         true_probs = []
-        
+
         # padding the docs
+        return_docs = []
         padded_docs = []
-        lengths = [len(self.tokenizer.tokenize(doc)) for doc in docs]
-        max_length = max(lengths)
+        lengths = [len(self.tokenizer.encode(doc)) for doc in docs]
+
         for i in range(len(lengths)):
-            padded_docs.append(docs[i] + ' ' + ' '.join(['<pad>']*(max_length - lengths[i])))
+            if lengths[i] <= max_sequence_length:
+                return_docs.append(docs[i])
+                padded_docs.append(
+                    docs[i] + ' ' + ' '.join(['<pad>'] * (max_sequence_length - lengths[i])))
 
         with torch.no_grad():
             for topic_string in topic_strings:
-                print(topic_string)
                 hypothesis_ = hypothesis.format(topic_string)
+                print(hypothesis_)
                 input_ids = [
                     self.tokenizer.encode(
                         doc, hypothesis_, return_tensors='pt').to(
                         self.torch_device) for doc in padded_docs]
                 input_ids = torch.cat(input_ids)
-                logits = [torch.reshape(x, (1, 3)) for x in self.model(input_ids)[0]]
+                logits = [torch.reshape(x, (1, 3))
+                          for x in self.model(input_ids)[0]]
 
                 # we throw away "neutral" (dim 1) and take the probability of
                 # "entailment" (2) as the probability of the label being true
@@ -93,4 +100,5 @@ class ZeroShotClassifier():
         if include_labels:
             true_probs = [list(zip(topic_strings, true_prob))
                           for true_prob in true_probs]
-        return true_probs
+        # TO DO: beautify the return method
+        return [return_docs, true_probs]
